@@ -2,13 +2,14 @@
 // compris) sont servis depuis le cache puis rafraîchis en arrière-plan.
 // Les appels à Open Food Facts passent toujours par le réseau.
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL_CACHE = 'shell-' + VERSION;
+// La page est en cache sous './' (l'adresse ouverte par l'app installée).
 const SHELL = [
   './',
-  'index.html',
   'style.css',
   'app.js',
+  'logic.js',
   'manifest.webmanifest',
   'icons/icon-192.png',
   'icons/icon-512.png',

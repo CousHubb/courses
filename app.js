@@ -1,58 +1,9 @@
 // Liste de courses : on scanne un code-barres, Open Food Facts donne le nom du produit,
-// tout est gardé dans le stockage local du téléphone.
+// tout est gardé dans le stockage local du téléphone. La logique pure est dans logic.js.
 
-const RAYONS = [
-  ['fruits', 'Fruits & légumes'],
-  ['boulangerie', 'Boulangerie'],
-  ['viandes', 'Viandes & poissons'],
-  ['cremerie', 'Crèmerie & œufs'],
-  ['epicerie', 'Épicerie'],
-  ['sucre', 'Épicerie sucrée'],
-  ['boissons', 'Boissons'],
-  ['surgeles', 'Surgelés'],
-  ['hygiene', 'Hygiène & beauté'],
-  ['maison', 'Maison & entretien'],
-  ['animaux', 'Animaux'],
-  ['autre', 'Autre'],
-];
-const RAYON_LABEL = Object.fromEntries(RAYONS);
-
-// Catégories Open Food Facts → rayon. La première règle qui correspond l'emporte.
-const CATEGORY_RULES = [
-  ['surgeles', ['en:frozen-foods', 'en:frozen-desserts', 'en:ice-creams-and-sorbets']],
-  ['animaux', ['en:pet-food', 'en:cat-food', 'en:dog-food']],
-  ['cremerie', ['en:dairies', 'en:eggs', 'en:cheeses', 'en:yogurts', 'en:butters', 'en:milks', 'en:creams']],
-  ['boissons', ['en:beverages', 'en:waters', 'en:alcoholic-beverages']],
-  ['viandes', ['en:meats', 'en:prepared-meats', 'en:poultries', 'en:seafood', 'en:fishes']],
-  ['boulangerie', ['en:breads', 'en:viennoiseries']],
-  ['sucre', ['en:sweet-snacks', 'en:biscuits-and-cakes', 'en:chocolates', 'en:confectioneries', 'en:breakfast-cereals',
-    'en:sweet-spreads', 'en:jams', 'en:honeys', 'en:sugars', 'en:desserts', 'en:breakfasts']],
-  ['fruits', ['en:fresh-fruits', 'en:fresh-vegetables']],
-  ['epicerie', ['en:canned-foods', 'en:pastas', 'en:rices', 'en:sauces', 'en:condiments', 'en:salty-snacks', 'en:soups',
-    'en:meals', 'en:vegetable-oils', 'en:cereals-and-potatoes', 'en:legumes']],
-  ['fruits', ['en:fruits', 'en:vegetables']],
-];
-
-// Les autres bases de la famille Open Food Facts renvoient un product_type.
-const TYPE_RAYON = { beauty: 'hygiene', petfood: 'animaux', product: 'maison' };
-
-// Mots-clés pour ranger les articles tapés à la main (sans accents, au singulier).
-const KEYWORDS = {
-  fruits: 'pomme banane orange citron fraise framboise tomate salade carotte oignon echalote ail poireau courgette aubergine poivron concombre avocat poire raisin kiwi peche abricot melon patate champignon legume fruit persil basilic',
-  boulangerie: 'pain baguette croissant brioche',
-  viandes: 'viande poulet boeuf steak porc jambon lardon saucisse saucisson merguez poisson saumon thon cabillaud crevette dinde veau agneau',
-  cremerie: 'lait yaourt fromage beurre creme oeuf emmental comte mozzarella parmesan',
-  epicerie: 'pate riz farine huile vinaigre sel poivre moutarde mayonnaise ketchup sauce conserve lentille semoule',
-  sucre: 'sucre chocolat biscuit gateau cereale confiture miel cafe the compote',
-  boissons: 'eau jus vin biere soda coca sirop',
-  surgeles: 'surgele glace',
-  hygiene: 'shampoing shampooing savon dentifrice deodorant gel coton rasoir papier mouchoir',
-  maison: 'lessive vaisselle eponge poubelle javel nettoyant adoucissant essuie',
-  animaux: 'croquette litiere patee',
-};
-const KEYWORD_RAYON = new Map(
-  Object.entries(KEYWORDS).flatMap(([rayon, words]) => words.split(' ').map((w) => [w, rayon])),
-);
+import {
+  RAYONS, RAYON_LABEL, addItem, catalogKey, cleanEntry, cleanItem, guessRayon, isCatalogKey, isNewer, norm, toInfo,
+} from './logic.js';
 
 const SOURCES = [
   { host: 'world.openfoodfacts.org', rayon: null },
@@ -128,8 +79,6 @@ function saveCatalog() {
   renderSuggestions();
 }
 
-const catalogKey = (item) => (item.code ? 'code:' + item.code : 'nom:' + norm(item.name));
-
 // Retient ce que l'app sait d'un produit, sans perdre son nombre d'achats.
 function remember(item) {
   const fields = item.code
@@ -171,25 +120,6 @@ function change(mutate) {
 const esc = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
-const norm = (s) =>
-  s.toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae').normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
-
-const uid = () => crypto.randomUUID?.() ?? Date.now().toString(36) + Math.random().toString(36).slice(2);
-
-function guessRayon(name) {
-  for (const word of norm(name).split(/[^a-z0-9]+/)) {
-    const rayon = KEYWORD_RAYON.get(word) ?? KEYWORD_RAYON.get(word.replace(/[sx]$/, ''));
-    if (rayon) return rayon;
-  }
-  return 'autre';
-}
-
-function rayonFromCategories(tags) {
-  const rule = CATEGORY_RULES.find(([, cats]) => cats.some((c) => tags.includes(c)));
-  if (rule) return rule[0];
-  return tags.length ? 'epicerie' : 'autre';
-}
-
 /* Open Food Facts */
 
 async function fetchProduct(host, code) {
@@ -199,17 +129,6 @@ async function fetchProduct(host, code) {
   if (!res.ok) return null; // 404 : produit inconnu de cette base
   const data = await res.json();
   return data.status === 1 ? data.product : null;
-}
-
-function toInfo(p, sourceRayon) {
-  const image = p.image_front_small_url || p.image_small_url || '';
-  return {
-    name: (p.product_name_fr || p.product_name || p.generic_name_fr || '').trim(),
-    brand: (p.brands ?? '').split(',')[0].trim(),
-    quantity: (p.quantity ?? '').trim().replace(/\s+[e℮]$/, ''), // "400 g e" : le ℮ des emballages
-    image: image.startsWith('https://') ? image : '',
-    rayon: TYPE_RAYON[p.product_type] ?? sourceRayon ?? rayonFromCategories(p.categories_tags ?? []),
-  };
 }
 
 // Cherche d'abord dans Open Food Facts (le cas courant), puis dans les bases sœurs en parallèle.
@@ -232,14 +151,7 @@ async function lookup(code) {
 
 function addToList(info) {
   change(() => {
-    let item = items.find((i) => (info.code && i.code === info.code) || norm(i.name) === norm(info.name));
-    if (item) {
-      item.qty = item.checked ? 1 : item.qty + 1;
-      item.checked = false;
-    } else {
-      item = { id: uid(), code: null, brand: '', quantity: '', image: '', rayon: 'autre', ...info, qty: 1, checked: false };
-      items.push(item);
-    }
+    const item = addItem(items, info);
     countPurchase(item);
     return item.qty > 1 ? `${item.name} (×${item.qty})` : `Ajouté : ${item.name}`;
   });
@@ -521,32 +433,6 @@ async function exportBackup() {
   }
 }
 
-// Une sauvegarde vient d'un fichier : on ne garde que des champs propres.
-function cleanItem(raw) {
-  if (typeof raw?.name !== 'string' || !raw.name.trim()) return null;
-  const text = (v) => (typeof v === 'string' ? v : '');
-  return {
-    id: text(raw.id) || uid(),
-    code: /^\d{8,14}$/.test(text(raw.code)) ? raw.code : null,
-    name: raw.name.trim(),
-    brand: text(raw.brand),
-    quantity: text(raw.quantity),
-    image: text(raw.image).startsWith('https://') ? raw.image : '',
-    rayon: RAYON_LABEL[raw.rayon] ? raw.rayon : 'autre',
-    qty: Math.max(1, Math.floor(Number(raw.qty)) || 1),
-    checked: raw.checked === true,
-  };
-}
-
-function cleanEntry(raw) {
-  const item = cleanItem(raw);
-  if (!item) return null;
-  const { name, brand, quantity, image, rayon } = item;
-  const entry = { name, brand, quantity, image, rayon };
-  if (Number(raw.count) > 0) Object.assign(entry, { count: Math.floor(raw.count), last: Number(raw.last) || 0 });
-  return entry;
-}
-
 // Remplace la liste par celle de la sauvegarde et ajoute les produits qu'elle connaît.
 async function importBackup(file) {
   let data = null;
@@ -562,7 +448,7 @@ async function importBackup(file) {
   const before = { items: structuredClone(items), catalog: structuredClone(catalog) };
   items = data.items.map(cleanItem).filter(Boolean);
   for (const [key, raw] of Object.entries(data.catalog ?? {})) {
-    const entry = /^(code:\d{8,14}|nom:.+)$/.test(key) && cleanEntry(raw);
+    const entry = isCatalogKey(key) && cleanEntry(raw);
     if (entry) catalog[key] = entry;
   }
   saveCatalog();
@@ -600,15 +486,6 @@ async function checkForUpdate() {
   } catch {
     lastUpdateCheck = 0; // pas de connexion : on réessaiera au prochain retour dans l'app
   }
-}
-
-function isNewer(a, b) {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
-  for (let i = 0; i < 3; i++) {
-    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
-  }
-  return false;
 }
 
 bannerEl.querySelector('.banner-close').addEventListener('click', () => {
@@ -682,6 +559,7 @@ function setStatus(text) {
 async function openScanner() {
   scannerEl.hidden = false;
   document.body.style.overflow = 'hidden';
+  lastCode = ''; // nouvelle ouverture : le premier code vu compte, même s'il vient d'être scanné
   if (!history.state?.scanner) history.pushState({ scanner: true }, '');
   try {
     audio ??= new AudioContext();
