@@ -19,7 +19,12 @@
 <body>
   <header class="top">
     <div class="top-inner">
-      <h1>Courses</h1>
+      <div class="title-row">
+        <h1>Courses</h1>
+        <button id="menu-btn" type="button" class="icon-btn" aria-label="Plus d'options">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.5v.01M12 12v.01M12 18.5v.01"/></svg>
+        </button>
+      </div>
       <p class="count" id="count"></p>
       <form id="add-form" class="add" autocomplete="off">
         <input id="add-input" name="name" type="text" placeholder="Ajouter un article…" list="suggestions"
@@ -31,6 +36,21 @@
       <datalist id="suggestions"></datalist>
     </div>
   </header>
+
+  <div class="extras">
+    <div id="update-banner" class="banner" hidden role="status">
+      <p class="banner-text"></p>
+      <a class="banner-btn" href="https://github.com/CousHubb/courses/releases/latest/download/Courses.apk">Télécharger</a>
+      <button type="button" class="banner-close" aria-label="Plus tard">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+
+    <section id="frequent" class="frequent" hidden aria-label="Articles à racheter">
+      <h2>À racheter ?</h2>
+      <div class="chips"></div>
+    </section>
+  </div>
 
   <main id="list" class="list"></main>
 
@@ -53,6 +73,9 @@
     <p class="scan-status" id="scan-status" role="status"></p>
     <div class="scan-actions">
       <button id="type-code" type="button" class="ghost">Taper le code</button>
+      <button id="torch" type="button" class="ghost round" aria-label="Lampe" aria-pressed="false" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2h8v4l-2 4v10a2 2 0 0 1-4 0V10L8 6zM8 6h8M12 13v2"/></svg>
+      </button>
       <button id="close-scan" type="button" class="primary">Terminé</button>
     </div>
   </section>
@@ -94,6 +117,26 @@
       </div>
     </form>
   </dialog>
+
+  <dialog id="menu-dialog" class="sheet">
+    <h2>Courses</h2>
+    <p class="hint" id="app-version"></p>
+    <div class="menu-list">
+      <button type="button" data-action="export">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
+        <span>Exporter une sauvegarde<small>La liste et les produits appris, dans un fichier</small></span>
+      </button>
+      <button type="button" data-action="import">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
+        <span>Importer une sauvegarde<small>Remplace la liste actuelle (tu pourras annuler)</small></span>
+      </button>
+    </div>
+    <div class="sheet-actions">
+      <span class="spacer"></span>
+      <button type="button" data-close="cancel">Fermer</button>
+    </div>
+  </dialog>
+  <input id="import-file" type="file" accept=".json,application/json" hidden>
 
   <dialog id="code-dialog" class="sheet">
     <form method="dialog">

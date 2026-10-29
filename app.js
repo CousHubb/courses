@@ -69,6 +69,11 @@ const SCAN_HINT = 'Vise le code-barres';
 
 const KEY_ITEMS = 'courses.items.v1';
 const KEY_CATALOG = 'courses.catalog.v1';
+const PUBLIC_REPO = 'CousHubb/courses'; // releases de l'APK
+
+// Dans l'APK, Capacitor donne accès à Android : bouton retour, fichiers, partage, version.
+const isApp = window.Capacitor?.isNativePlatform?.() ?? false;
+const { App: appPlugin, Filesystem, Share } = window.Capacitor?.Plugins ?? {};
 
 const $ = (sel) => document.querySelector(sel);
 const listEl = $('#list');
@@ -84,6 +89,11 @@ const toastEl = $('#toast');
 const itemDialog = $('#item-dialog');
 const itemForm = $('#item-form');
 const codeDialog = $('#code-dialog');
+const menuDialog = $('#menu-dialog');
+const importInput = $('#import-file');
+const frequentEl = $('#frequent');
+const bannerEl = $('#update-banner');
+const torchBtn = $('#torch');
 
 /* Stockage */
 
@@ -118,13 +128,24 @@ function saveCatalog() {
   renderSuggestions();
 }
 
+const catalogKey = (item) => (item.code ? 'code:' + item.code : 'nom:' + norm(item.name));
+
+// Retient ce que l'app sait d'un produit, sans perdre son nombre d'achats.
 function remember(item) {
-  if (item.code) {
-    const { name, brand = '', quantity = '', image = '', rayon } = item;
-    catalog['code:' + item.code] = { name, brand, quantity, image, rayon };
-  } else {
-    catalog['nom:' + norm(item.name)] = { name: item.name, rayon: item.rayon };
-  }
+  const fields = item.code
+    ? { name: item.name, brand: item.brand ?? '', quantity: item.quantity ?? '', image: item.image ?? '', rayon: item.rayon }
+    : { name: item.name, rayon: item.rayon };
+  const key = catalogKey(item);
+  catalog[key] = { ...catalog[key], ...fields };
+  saveCatalog();
+}
+
+// Compte les ajouts de chaque produit, pour proposer ensuite les articles à racheter.
+function countPurchase(item) {
+  const entry = catalog[catalogKey(item)];
+  if (!entry) return;
+  entry.count = (entry.count ?? 0) + 1;
+  entry.last = Date.now();
   saveCatalog();
 }
 
@@ -219,14 +240,20 @@ function addToList(info) {
       item = { id: uid(), code: null, brand: '', quantity: '', image: '', rayon: 'autre', ...info, qty: 1, checked: false };
       items.push(item);
     }
+    countPurchase(item);
     return item.qty > 1 ? `${item.name} (×${item.qty})` : `Ajouté : ${item.name}`;
   });
 }
 
+// Ajoute un produit que l'app connaît déjà, avec sa photo et son rayon.
+function addFromCatalog(key) {
+  const { count, last, ...fields } = catalog[key];
+  addToList({ ...fields, code: key.startsWith('code:') ? key.slice(5) : null });
+}
+
 async function handleCode(code) {
-  const known = catalog['code:' + code];
-  if (known) {
-    addToList({ ...known, code });
+  if (catalog['code:' + code]) {
+    addFromCatalog('code:' + code);
     return;
   }
   setStatus('Recherche du produit…');
@@ -258,11 +285,9 @@ addForm.addEventListener('submit', (e) => {
   if (!name) return;
   addInput.value = '';
   // Un nom déjà connu (scanné ou tapé avant) garde sa photo et son rayon.
-  const key = norm(name);
-  const match = Object.entries(catalog).find(([, v]) => norm(v.name) === key);
+  const match = Object.keys(catalog).find((key) => norm(catalog[key].name) === norm(name));
   if (match) {
-    const [k, v] = match;
-    addToList({ ...v, code: k.startsWith('code:') ? k.slice(5) : null });
+    addFromCatalog(match);
   } else {
     const entry = { name, rayon: guessRayon(name) };
     remember(entry);
@@ -287,7 +312,27 @@ function render() {
   }
   if (done.length) html += sectionHtml('Dans le caddie', done, true);
   listEl.innerHTML = html;
+  renderFrequent();
 }
+
+// Les produits déjà achetés qui ne sont pas dans la liste, les plus fréquents d'abord.
+function renderFrequent() {
+  const inList = new Set(items.filter((i) => !i.checked).map(catalogKey));
+  const top = Object.entries(catalog)
+    .filter(([key, entry]) => entry.count > 0 && !inList.has(key))
+    .sort(([, a], [, b]) => b.count - a.count || b.last - a.last)
+    .slice(0, 12);
+  frequentEl.hidden = top.length === 0;
+  frequentEl.querySelector('.chips').innerHTML = top
+    .map(([key, entry]) => `<button type="button" class="chip" data-key="${esc(key)}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>${esc(entry.name)}</button>`)
+    .join('');
+}
+
+frequentEl.addEventListener('click', (e) => {
+  const key = e.target.closest('.chip')?.dataset.key;
+  if (key && catalog[key]) addFromCatalog(key);
+});
 
 function sectionHtml(label, group, done = false) {
   const clear = done ? '<button type="button" class="link-btn" data-action="clear-done">Retirer</button>' : '';
@@ -438,6 +483,138 @@ function askCode() {
   });
 }
 
+/* Sauvegarde */
+
+const BACKUP_APP = 'courses';
+
+$('#menu-btn').addEventListener('click', () => menuDialog.showModal());
+
+menuDialog.addEventListener('click', (e) => {
+  const action = e.target.closest('[data-action]')?.dataset.action;
+  if (!action) return;
+  menuDialog.close();
+  if (action === 'export') exportBackup();
+  else importInput.click();
+});
+
+importInput.addEventListener('change', () => {
+  const file = importInput.files[0];
+  importInput.value = '';
+  if (file) importBackup(file);
+});
+
+async function exportBackup() {
+  const json = JSON.stringify({ app: BACKUP_APP, version: 1, date: new Date().toISOString(), items, catalog }, null, 1);
+  const name = `courses-${new Date().toISOString().slice(0, 10)}.json`;
+  try {
+    if (isApp && Filesystem && Share) {
+      // Dans l'APK, le menu Partager d'Android permet de l'enregistrer (Drive, Fichiers, e-mail…).
+      const { uri } = await Filesystem.writeFile({ path: name, data: json, directory: 'CACHE', encoding: 'utf8' });
+      await Share.share({ title: 'Sauvegarde Courses', dialogTitle: 'Enregistrer la sauvegarde', files: [uri] });
+    } else {
+      const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+      Object.assign(document.createElement('a'), { href: url, download: name }).click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  } catch (err) {
+    if (!/cancel/i.test(err?.message ?? '')) toast('Impossible d\'exporter la sauvegarde.');
+  }
+}
+
+// Une sauvegarde vient d'un fichier : on ne garde que des champs propres.
+function cleanItem(raw) {
+  if (typeof raw?.name !== 'string' || !raw.name.trim()) return null;
+  const text = (v) => (typeof v === 'string' ? v : '');
+  return {
+    id: text(raw.id) || uid(),
+    code: /^\d{8,14}$/.test(text(raw.code)) ? raw.code : null,
+    name: raw.name.trim(),
+    brand: text(raw.brand),
+    quantity: text(raw.quantity),
+    image: text(raw.image).startsWith('https://') ? raw.image : '',
+    rayon: RAYON_LABEL[raw.rayon] ? raw.rayon : 'autre',
+    qty: Math.max(1, Math.floor(Number(raw.qty)) || 1),
+    checked: raw.checked === true,
+  };
+}
+
+function cleanEntry(raw) {
+  const item = cleanItem(raw);
+  if (!item) return null;
+  const { name, brand, quantity, image, rayon } = item;
+  const entry = { name, brand, quantity, image, rayon };
+  if (Number(raw.count) > 0) Object.assign(entry, { count: Math.floor(raw.count), last: Number(raw.last) || 0 });
+  return entry;
+}
+
+// Remplace la liste par celle de la sauvegarde et ajoute les produits qu'elle connaît.
+async function importBackup(file) {
+  let data = null;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    // Pas du JSON : traité juste en dessous.
+  }
+  if (data?.app !== BACKUP_APP || !Array.isArray(data.items)) {
+    toast('Ce fichier n\'est pas une sauvegarde de Courses.');
+    return;
+  }
+  const before = { items: structuredClone(items), catalog: structuredClone(catalog) };
+  items = data.items.map(cleanItem).filter(Boolean);
+  for (const [key, raw] of Object.entries(data.catalog ?? {})) {
+    const entry = /^(code:\d{8,14}|nom:.+)$/.test(key) && cleanEntry(raw);
+    if (entry) catalog[key] = entry;
+  }
+  saveCatalog();
+  saveItems();
+  toast(`Sauvegarde importée : ${items.length} article${items.length > 1 ? 's' : ''}`, () => {
+    ({ items, catalog } = before);
+    saveCatalog();
+    saveItems();
+  });
+}
+
+/* Mise à jour */
+
+let lastUpdateCheck = 0;
+
+// Le site se met à jour tout seul ; l'APK demande à GitHub la dernière version publiée.
+async function checkForUpdate() {
+  if (!appPlugin) {
+    $('#app-version').textContent = 'Version web : elle se met à jour toute seule.';
+    return;
+  }
+  if (Date.now() - lastUpdateCheck < 6 * 3600 * 1000) return;
+  lastUpdateCheck = Date.now();
+  try {
+    const { version } = await appPlugin.getInfo();
+    $('#app-version').textContent = `Version ${version}`;
+    const res = await fetch(`https://api.github.com/repos/${PUBLIC_REPO}/releases/latest`, {
+      signal: AbortSignal.timeout(8000),
+    });
+    const latest = res.ok ? (await res.json()).tag_name?.replace(/^v/, '') : null;
+    if (latest && isNewer(latest, version)) {
+      bannerEl.querySelector('.banner-text').textContent = `La version ${latest} est disponible.`;
+      bannerEl.hidden = false;
+    }
+  } catch {
+    lastUpdateCheck = 0; // pas de connexion : on réessaiera au prochain retour dans l'app
+  }
+}
+
+function isNewer(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  }
+  return false;
+}
+
+bannerEl.querySelector('.banner-close').addEventListener('click', () => {
+  bannerEl.hidden = true;
+});
+
 /* Toast */
 
 let toastTimer = 0;
@@ -543,8 +720,28 @@ async function openScanner() {
     return;
   }
   setStatus(SCAN_HINT);
+  setupTorch();
   scheduleScan();
 }
+
+// La lampe n'apparaît que si la caméra l'annonce (la plupart des téléphones Android, pas l'iPhone).
+function setupTorch() {
+  const track = stream?.getVideoTracks()[0];
+  torchBtn.setAttribute('aria-pressed', 'false');
+  torchBtn.hidden = !track?.getCapabilities?.().torch;
+}
+
+torchBtn.addEventListener('click', async () => {
+  const track = stream?.getVideoTracks()[0];
+  if (!track) return;
+  const on = torchBtn.getAttribute('aria-pressed') !== 'true';
+  try {
+    await track.applyConstraints({ advanced: [{ torch: on }] });
+    torchBtn.setAttribute('aria-pressed', String(on));
+  } catch {
+    toast('Impossible d\'allumer la lampe.');
+  }
+});
 
 function scheduleScan() {
   scanTimer = setTimeout(scanFrame, 150);
@@ -608,9 +805,10 @@ function stopStream() {
 
 function hideScanner() {
   scannerEl.hidden = true;
+  torchBtn.hidden = true;
   document.body.style.overflow = '';
   clearTimeout(scanTimer);
-  stopStream();
+  stopStream(); // éteint aussi la lampe
 }
 
 // Le scanner occupe une entrée d'historique : le geste retour d'Android
@@ -644,7 +842,6 @@ document.addEventListener('keydown', (e) => {
 
 // Bouton retour d'Android dans l'APK : ferme ce qui est ouvert, sinon met l'app en arrière-plan
 // (sans ce gestionnaire, Capacitor ne fait rien une fois l'historique vide).
-const appPlugin = window.Capacitor?.Plugins?.App;
 appPlugin?.addListener('backButton', () => {
   const dialog = document.querySelector('dialog[open]');
   if (dialog) dialog.close('cancel');
@@ -652,9 +849,10 @@ appPlugin?.addListener('backButton', () => {
   else appPlugin.minimizeApp();
 });
 
-// On rend la caméra dès que l'app passe en arrière-plan.
+// On rend la caméra dès que l'app passe en arrière-plan ; au retour, on regarde s'il y a une mise à jour.
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && !scannerEl.hidden) closeScanner();
+  if (!document.hidden) checkForUpdate();
 });
 
 /* Démarrage */
@@ -671,12 +869,12 @@ addEventListener('storage', (e) => {
 
 render();
 renderSuggestions();
+checkForUpdate();
 
 // Dans l'APK, les fichiers sont déjà sur le téléphone : pas besoin de service worker.
-const isApp = window.Capacitor?.isNativePlatform?.() ?? false;
 if ('serviceWorker' in navigator && !isApp) navigator.serviceWorker.register('sw.js').catch(() => {});
 
-// Sans lecteur natif (iPhone, ordinateur, APK), on précharge le polyfill pour que
+// Sans lecteur natif (iPhone, ordinateur), on précharge le polyfill pour que
 // le premier scan soit immédiat et qu'il reste disponible hors connexion.
 if (!('BarcodeDetector' in window)) {
   setTimeout(() => {
