@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Courses</title>
+  <meta name="description" content="Scanne un emballage, il s'ajoute à ta liste de courses.">
+  <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#121412" media="(prefers-color-scheme: dark)">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Courses">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="top-inner">
+      <h1>Courses</h1>
+      <p class="count" id="count"></p>
+      <form id="add-form" class="add" autocomplete="off">
+        <input id="add-input" name="name" type="text" placeholder="Ajouter un article…" list="suggestions"
+               enterkeyhint="done" aria-label="Ajouter un article">
+        <button type="submit" class="add-btn" aria-label="Ajouter">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </form>
+      <datalist id="suggestions"></datalist>
+    </div>
+  </header>
+
+  <main id="list" class="list"></main>
+
+  <div id="empty" class="empty" hidden>
+    <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 12v24M13 12v24M17 12v24M23 12v24M27 12v24M33 12v24M36 12v24M40 12v24"/></svg>
+    <p class="empty-title">Ta liste est vide</p>
+    <p>Scanne un emballage avant de le jeter, ou tape un article ci-dessus.</p>
+  </div>
+
+  <button id="scan-btn" class="fab" type="button">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M14 8v8M17 8v8"/></svg>
+    Scanner
+  </button>
+
+  <section id="scanner" class="scanner" hidden aria-label="Scanner de code-barres">
+    <!-- Image transparente : sinon Android affiche une icône « lecture » avant la caméra. -->
+    <video id="video" playsinline muted autoplay
+           poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></video>
+    <div class="frame"><span class="laser"></span></div>
+    <p class="scan-status" id="scan-status" role="status"></p>
+    <div class="scan-actions">
+      <button id="type-code" type="button" class="ghost">Taper le code</button>
+      <button id="close-scan" type="button" class="primary">Terminé</button>
+    </div>
+  </section>
+
+  <div id="toast" class="toast" hidden role="status">
+    <span class="toast-msg"></span>
+    <button type="button" class="toast-undo">Annuler</button>
+  </div>
+
+  <dialog id="item-dialog" class="sheet">
+    <form method="dialog" id="item-form">
+      <h2 id="item-title"></h2>
+      <p id="item-hint" class="hint"></p>
+      <label class="field">
+        <span>Nom</span>
+        <input name="name" type="text" required autocomplete="off" enterkeyhint="done">
+      </label>
+      <label class="field">
+        <span>Rayon</span>
+        <select name="rayon"></select>
+      </label>
+      <div class="field" id="qty-field">
+        <span>Quantité</span>
+        <div class="stepper">
+          <button type="button" data-step="-1" aria-label="Moins">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
+          </button>
+          <output name="qty">1</output>
+          <button type="button" data-step="1" aria-label="Plus">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="sheet-actions">
+        <button type="button" data-close="delete" id="item-delete" class="danger">Supprimer</button>
+        <span class="spacer"></span>
+        <button type="button" data-close="cancel">Annuler</button>
+        <button value="ok" class="primary" id="item-ok">Enregistrer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="code-dialog" class="sheet">
+    <form method="dialog">
+      <h2>Taper le code-barres</h2>
+      <p class="hint">Les chiffres sous les barres (8 à 14 chiffres).</p>
+      <label class="field">
+        <span>Code</span>
+        <input name="code" type="text" inputmode="numeric" required autocomplete="off"
+               enterkeyhint="search" placeholder="3017620422003">
+      </label>
+      <div class="sheet-actions">
+        <span class="spacer"></span>
+        <button type="button" data-close="cancel">Annuler</button>
+        <button value="ok" class="primary">Chercher</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>
