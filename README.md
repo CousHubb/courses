@@ -17,6 +17,8 @@ Toutes les versions et ce qui a changé : [Releases](https://github.com/CousHubb
 
 Pour mettre à jour, installe la nouvelle APK par-dessus l'ancienne : ta liste est conservée.
 
+Si tu as une version antérieure à la 1.1.0, Android refusera la mise à jour (« Application non installée ») : la 1.1.0 a changé de signature. Désinstalle l'ancienne d'abord ; la liste repartira vide, une seule fois.
+
 ---
 
 Ce dépôt ne contient que l'app prête à l'emploi. Les produits viennent d'[Open Food Facts](https://world.openfoodfacts.org) ; le lecteur de codes-barres utilise [ZXing](https://github.com/zxing-cpp/zxing-cpp) (licences dans `vendor/`).
